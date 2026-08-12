@@ -2,25 +2,26 @@
 
 import Editor from "@monaco-editor/react";
 
-export default function CodeEditor({ file }) {
+export default function CodeEditor({ file, onChange }) {
   return (
     <Editor
       height="100%"
       language={file.language}
       value={file.content}
+      onChange={(value) => onChange(value || "")}
       theme="vs-dark"
       options={{
         fontSize: 14,
         minimap: {
           enabled: false,
         },
-        padding: {
-          top: 12,
-        },
         automaticLayout: true,
         scrollBeyondLastLine: false,
         smoothScrolling: true,
         cursorBlinking: "smooth",
+        padding: {
+          top: 12,
+        },
       }}
     />
   );
