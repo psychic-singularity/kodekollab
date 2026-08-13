@@ -38,25 +38,48 @@ hello();`,
 
 export default function EditorLayout() {
   const [files, setFiles] = useState(initialFiles);
-  const [selectedFile, setSelectedFile] = useState(initialFiles[0]);
+  const [selectedFileName, setSelectedFileName] = useState("index.js");
+
+  const selectedFile = files.find(
+    (file) => file.name === selectedFileName
+  );
 
   function handleFileSelect(file) {
-    setSelectedFile(file);
+    setSelectedFileName(file.name);
   }
 
   function handleEditorChange(value) {
-    const updatedFile = {
-      ...selectedFile,
-      content: value,
-    };
-
     setFiles((currentFiles) =>
       currentFiles.map((file) =>
-        file.name === selectedFile.name ? updatedFile : file
+        file.name === selectedFileName
+          ? {
+              ...file,
+              content: value,
+            }
+          : file
       )
     );
+  }
 
-    setSelectedFile(updatedFile);
+  function getLanguage(filename) {
+    const extension = filename.split(".").pop();
+
+    const languages = {
+      js: "javascript",
+      jsx: "javascript",
+      ts: "typescript",
+      tsx: "typescript",
+      json: "json",
+      css: "css",
+      html: "html",
+      py: "python",
+      java: "java",
+      cpp: "cpp",
+      c: "c",
+      md: "markdown",
+    };
+
+    return languages[extension] || "plaintext";
   }
 
   function createFile() {
@@ -64,31 +87,27 @@ export default function EditorLayout() {
 
     if (!name) return;
 
-    if (files.some((file) => file.name === name)) {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) return;
+
+    if (
+      files.some(
+        (file) => file.name.toLowerCase() === trimmedName.toLowerCase()
+      )
+    ) {
       alert("A file with this name already exists.");
       return;
     }
 
-    const extension = name.split(".").pop();
-
-    let language = "plaintext";
-
-    if (extension === "js") language = "javascript";
-    if (extension === "jsx") language = "javascript";
-    if (extension === "ts") language = "typescript";
-    if (extension === "tsx") language = "typescript";
-    if (extension === "json") language = "json";
-    if (extension === "css") language = "css";
-    if (extension === "html") language = "html";
-
     const newFile = {
-      name,
-      language,
+      name: trimmedName,
+      language: getLanguage(trimmedName),
       content: "",
     };
 
     setFiles((currentFiles) => [...currentFiles, newFile]);
-    setSelectedFile(newFile);
+    setSelectedFileName(trimmedName);
   }
 
   function deleteFile(fileName) {
@@ -101,12 +120,89 @@ export default function EditorLayout() {
 
     if (!confirmed) return;
 
-    const newFiles = files.filter((file) => file.name !== fileName);
+    const fileIndex = files.findIndex(
+      (file) => file.name === fileName
+    );
+
+    const newFiles = files.filter(
+      (file) => file.name !== fileName
+    );
 
     setFiles(newFiles);
 
-    if (selectedFile.name === fileName) {
-      setSelectedFile(newFiles[0]);
+    if (selectedFileName === fileName) {
+      const nextFile =
+        newFiles[fileIndex] || newFiles[fileIndex - 1];
+
+      setSelectedFileName(nextFile.name);
+    }
+  }
+
+  function renameFile(oldName) {
+    const newName = prompt(
+      "Enter new file name:",
+      oldName
+    );
+
+    if (!newName) return;
+
+    const trimmedName = newName.trim();
+
+    if (!trimmedName || trimmedName === oldName) {
+      return;
+    }
+
+    if (
+      files.some(
+        (file) =>
+          file.name.toLowerCase() ===
+            trimmedName.toLowerCase() &&
+          file.name !== oldName
+      )
+    ) {
+      alert("A file with this name already exists.");
+      return;
+    }
+
+    setFiles((currentFiles) =>
+      currentFiles.map((file) =>
+        file.name === oldName
+          ? {
+              ...file,
+              name: trimmedName,
+              language: getLanguage(trimmedName),
+            }
+          : file
+      )
+    );
+
+    if (selectedFileName === oldName) {
+      setSelectedFileName(trimmedName);
+    }
+  }
+
+  function closeTab(fileName) {
+    if (files.length === 1) {
+      return;
+    }
+
+    const fileIndex = files.findIndex(
+      (file) => file.name === fileName
+    );
+
+    const newFiles = files.filter(
+      (file) => file.name !== fileName
+    );
+
+    setFiles(newFiles);
+
+    if (selectedFileName === fileName) {
+      const nextFile =
+        newFiles[fileIndex] ||
+        newFiles[fileIndex - 1] ||
+        newFiles[0];
+
+      setSelectedFileName(nextFile.name);
     }
   }
 
@@ -121,36 +217,63 @@ export default function EditorLayout() {
           onSelect={handleFileSelect}
           onCreateFile={createFile}
           onDeleteFile={deleteFile}
+          onRenameFile={renameFile}
         />
 
         <main className="flex-1 min-w-0 flex flex-col">
           {/* Tabs */}
-          <div className="h-9 bg-[#161b22] border-b border-[#30363d] flex items-center">
+          <div className="h-9 bg-[#161b22] border-b border-[#30363d] flex items-center overflow-x-auto">
             {files.map((file) => {
-              const active = selectedFile.name === file.name;
+              const active =
+                selectedFileName === file.name;
 
               return (
-                <button
+                <div
                   key={file.name}
-                  onClick={() => handleFileSelect(file)}
-                  className={`h-full px-4 text-sm border-r border-[#30363d] ${
+                  className={`h-full flex items-center border-r border-[#30363d] ${
                     active
-                      ? "bg-[#0d1117] text-white"
-                      : "text-gray-400 hover:text-gray-200 hover:bg-[#21262d]"
+                      ? "bg-[#0d1117]"
+                      : "bg-[#161b22]"
                   }`}
                 >
-                  {file.name}
-                </button>
+                  <button
+                    onClick={() =>
+                      handleFileSelect(file)
+                    }
+                    className={`h-full px-3 text-sm ${
+                      active
+                        ? "text-white"
+                        : "text-gray-400 hover:text-gray-200"
+                    }`}
+                  >
+                    {file.name}
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      closeTab(file.name)
+                    }
+                    className={`mr-1 px-1 text-xs rounded ${
+                      active
+                        ? "text-gray-400 hover:text-white hover:bg-[#21262d]"
+                        : "text-gray-600 hover:text-white"
+                    }`}
+                  >
+                    ×
+                  </button>
+                </div>
               );
             })}
           </div>
 
           {/* Editor */}
           <div className="flex-1 min-h-0">
-            <CodeEditor
-              file={selectedFile}
-              onChange={handleEditorChange}
-            />
+            {selectedFile && (
+              <CodeEditor
+                file={selectedFile}
+                onChange={handleEditorChange}
+              />
+            )}
           </div>
         </main>
       </div>
@@ -158,11 +281,12 @@ export default function EditorLayout() {
       {/* Status bar */}
       <div className="h-7 bg-[#161b22] border-t border-[#30363d] flex items-center justify-between px-3 text-xs text-gray-400">
         <span>
-          <span className="text-green-500">●</span> Connected
+          <span className="text-green-500">●</span>{" "}
+          Connected
         </span>
 
         <span>
-          {selectedFile.language} &nbsp; UTF-8
+          {selectedFile?.language} &nbsp; UTF-8
         </span>
       </div>
     </div>
