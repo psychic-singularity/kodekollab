@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Navbar from "./Navbar";
 import FileExplorer from "./FileExplorer";
 import CodeEditor from "./CodeEditor";
+import { socket } from "../lib/socket";
+
+const roomId = "test-room";
 
 const initialFiles = [
   {
@@ -40,6 +43,32 @@ export default function EditorLayout() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFileName, setSelectedFileName] = useState("index.js");
 
+  useEffect(() => {
+    function joinRoom() {
+      socket.emit("join-room", roomId);
+    }
+
+    function handleCodeUpdate({ fileName, code }) {
+      setFiles((currentFiles) =>
+        currentFiles.map((file) =>
+          file.name === fileName ? { ...file, content: code } : file
+        )
+      );
+    }
+
+    socket.on("connect", joinRoom);
+    socket.on("code-update", handleCodeUpdate);
+
+    if (socket.connected) {
+      joinRoom();
+    }
+
+    return () => {
+      socket.off("connect", joinRoom);
+      socket.off("code-update", handleCodeUpdate);
+    };
+  }, []);
+
   const selectedFile = files.find(
     (file) => file.name === selectedFileName
   );
@@ -59,6 +88,12 @@ export default function EditorLayout() {
           : file
       )
     );
+
+    socket.emit("code-change", {
+      roomId,
+      fileName: selectedFileName,
+      code: value,
+    });
   }
 
   function getLanguage(filename) {

@@ -9,6 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
+const roomFiles = new Map();
 
 const io = new Server(server, {
   cors: {
@@ -27,9 +28,27 @@ io.on("connection", (socket) => {
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
 
-    console.log(`${socket.id} joined room ${roomId}`);
+    console.log(`${socket.id} joined ${roomId}`);
 
-    socket.to(roomId).emit("user-joined", socket.id);
+    const savedFiles = roomFiles.get(roomId);
+
+    if (savedFiles) {
+      for (const [fileName, code] of savedFiles) {
+        socket.emit("code-update", { fileName, code });
+      }
+    }
+  });
+
+  socket.on("code-change", ({ roomId, fileName, code }) => {
+    console.log("Code changed in:", roomId);
+
+    if (!roomFiles.has(roomId)) {
+      roomFiles.set(roomId, new Map());
+    }
+
+    roomFiles.get(roomId).set(fileName, code);
+
+    socket.to(roomId).emit("code-update", { fileName, code });
   });
 
   socket.on("disconnect", () => {
