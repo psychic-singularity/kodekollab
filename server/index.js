@@ -25,19 +25,72 @@ app.get("/", (req, res) => {
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  socket.on("join-room", (roomId) => {
-    socket.join(roomId);
+  socket.on("join-room", ({ roomId, files }) => {
+  socket.join(roomId);
 
-    console.log(`${socket.id} joined ${roomId}`);
+  console.log(`${socket.id} joined ${roomId}`);
 
-    const savedFiles = roomFiles.get(roomId);
+  if (!roomFiles.has(roomId)) {
+    const fileMap = new Map();
 
-    if (savedFiles) {
-      for (const [fileName, code] of savedFiles) {
-        socket.emit("code-update", { fileName, code });
-      }
-    }
+    files.forEach((file) => {
+      fileMap.set(file.name, file.content);
+    });
+
+    roomFiles.set(roomId, fileMap);
+
+    console.log(`Created room: ${roomId}`);
+    return;
+  }
+
+  const savedFiles = roomFiles.get(roomId);
+
+  for (const [fileName, code] of savedFiles) {
+    socket.emit("code-update", {
+      fileName,
+      code,
+    });
+  }
+  socket.on("create-file", ({ roomId, file }) => {
+  if (!roomFiles.has(roomId)) {
+    roomFiles.set(roomId, new Map());
+  }
+
+  roomFiles.get(roomId).set(file.name, file.content);
+
+  socket.to(roomId).emit("file-created", file);
+});
+
+socket.on("delete-file", ({ roomId, fileName }) => {
+  const files = roomFiles.get(roomId);
+
+  if (!files) return;
+
+  files.delete(fileName);
+
+  socket.to(roomId).emit("file-deleted", {
+    fileName,
   });
+});
+
+socket.on("rename-file", ({ roomId, oldName, newFile }) => {
+  const files = roomFiles.get(roomId);
+
+  if (!files) return;
+
+  const oldContent = files.get(oldName);
+
+  files.delete(oldName);
+
+  files.set(newFile.name, oldContent ?? "");
+
+  socket.to(roomId).emit("file-renamed", {
+    oldName,
+    newFile,
+  });
+});
+});
+  
 
   socket.on("code-change", ({ roomId, fileName, code }) => {
     console.log("Code changed in:", roomId);

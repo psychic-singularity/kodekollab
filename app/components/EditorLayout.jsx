@@ -43,31 +43,84 @@ export default function EditorLayout() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFileName, setSelectedFileName] = useState("index.js");
 
-  useEffect(() => {
-    function joinRoom() {
-      socket.emit("join-room", roomId);
-    }
+ useEffect(() => {
+  function joinRoom() {
+    socket.emit("join-room", {
+      roomId,
+      files: initialFiles,
+    });
+  }
 
-    function handleCodeUpdate({ fileName, code }) {
-      setFiles((currentFiles) =>
-        currentFiles.map((file) =>
-          file.name === fileName ? { ...file, content: code } : file
+  function handleCodeUpdate({ fileName, code }) {
+    setFiles((currentFiles) =>
+      currentFiles.map((file) =>
+        file.name === fileName
+          ? { ...file, content: code }
+          : file
+      )
+    );
+  }
+
+  function handleFileCreated(file) {
+    setFiles((currentFiles) => {
+      if (
+        currentFiles.some(
+          (existing) => existing.name === file.name
         )
-      );
-    }
+      ) {
+        return currentFiles;
+      }
 
-    socket.on("connect", joinRoom);
-    socket.on("code-update", handleCodeUpdate);
+      return [...currentFiles, file];
+    });
+  }
 
-    if (socket.connected) {
-      joinRoom();
-    }
+  function handleFileDeleted({ fileName }) {
+    setFiles((currentFiles) =>
+      currentFiles.filter(
+        (file) => file.name !== fileName
+      )
+    );
+  }
 
-    return () => {
-      socket.off("connect", joinRoom);
-      socket.off("code-update", handleCodeUpdate);
-    };
-  }, []);
+  function handleFileRenamed({ oldName, newFile }) {
+    setFiles((currentFiles) =>
+      currentFiles.map((file) =>
+        file.name === oldName
+          ? newFile
+          : file
+      )
+    );
+
+    setSelectedFileName((currentName) =>
+      currentName === oldName
+        ? newFile.name
+        : currentName
+    );
+  }
+
+  socket.on("connect", joinRoom);
+
+  socket.on("code-update", handleCodeUpdate);
+
+  socket.on("file-created", handleFileCreated);
+  socket.on("file-deleted", handleFileDeleted);
+  socket.on("file-renamed", handleFileRenamed);
+
+  if (socket.connected) {
+    joinRoom();
+  }
+
+  return () => {
+    socket.off("connect", joinRoom);
+
+    socket.off("code-update", handleCodeUpdate);
+
+    socket.off("file-created", handleFileCreated);
+    socket.off("file-deleted", handleFileDeleted);
+    socket.off("file-renamed", handleFileRenamed);
+  };
+}, []);
 
   const selectedFile = files.find(
     (file) => file.name === selectedFileName
@@ -141,8 +194,17 @@ export default function EditorLayout() {
       content: "",
     };
 
-    setFiles((currentFiles) => [...currentFiles, newFile]);
-    setSelectedFileName(trimmedName);
+     setFiles((currentFiles) => [
+    ...currentFiles,
+    newFile,
+  ]);
+
+  setSelectedFileName(trimmedName);
+
+  socket.emit("create-file", {
+    roomId,
+    file: newFile,
+  });
   }
 
   function deleteFile(fileName) {
@@ -164,6 +226,11 @@ export default function EditorLayout() {
     );
 
     setFiles(newFiles);
+
+    socket.emit("delete-file", {
+      roomId,
+      fileName,
+    });
 
     if (selectedFileName === fileName) {
       const nextFile =
@@ -199,21 +266,29 @@ export default function EditorLayout() {
       return;
     }
 
-    setFiles((currentFiles) =>
-      currentFiles.map((file) =>
-        file.name === oldName
-          ? {
-              ...file,
-              name: trimmedName,
-              language: getLanguage(trimmedName),
-            }
-          : file
-      )
-    );
+   const renamedFile = {
+  ...files.find((file) => file.name === oldName),
+  name: trimmedName,
+  language: getLanguage(trimmedName),
+};
 
-    if (selectedFileName === oldName) {
-      setSelectedFileName(trimmedName);
-    }
+setFiles((currentFiles) =>
+  currentFiles.map((file) =>
+    file.name === oldName
+      ? renamedFile
+      : file
+  )
+);
+
+if (selectedFileName === oldName) {
+  setSelectedFileName(trimmedName);
+}
+
+socket.emit("rename-file", {
+  roomId,
+  oldName,
+  newFile: renamedFile,
+});
   }
 
   function closeTab(fileName) {
