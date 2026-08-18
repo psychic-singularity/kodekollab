@@ -1,404 +1,142 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import Navbar from "./Navbar";
 import FileExplorer from "./FileExplorer";
 import CodeEditor from "./CodeEditor";
 import { socket } from "../lib/socket";
 
-const roomId = "test-room";
+export default function EditorLayout({ roomId }) {
+  const [files, setFiles] = useState([]);
+  const [selectedFileName, setSelectedFileName] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [participantCount, setParticipantCount] = useState(0);
+  const [error, setError] = useState("");
 
-const initialFiles = [
-  {
-    name: "index.js",
-    language: "javascript",
-    content: `const express = require("express");
+  useEffect(() => {
+    function joinRoom() {
+      socket.emit("join-room", { roomId }, (result) => {
+        if (!result?.ok) {
+          setConnected(false);
+          setError(result?.error || "Could not join this room.");
+          return;
+        }
+        setFiles(result.files);
+        setSelectedFileName((currentName) => result.files.some((file) => file.name === currentName) ? currentName : result.files[0]?.name || "");
+        setParticipantCount(result.participantCount);
+        setConnected(true);
+        setError("");
+      });
+    }
 
-const app = express();
+    function handleCodeUpdate({ fileName, code }) {
+      setFiles((currentFiles) => currentFiles.map((file) => file.name === fileName ? { ...file, content: code } : file));
+    }
+    function handleFileCreated(file) {
+      setFiles((currentFiles) => currentFiles.some((entry) => entry.name === file.name) ? currentFiles : [...currentFiles, file]);
+    }
+    function handleFileDeleted({ fileName }) {
+      setFiles((currentFiles) => {
+        const nextFiles = currentFiles.filter((file) => file.name !== fileName);
+        setSelectedFileName((currentName) => currentName === fileName ? nextFiles[0]?.name || "" : currentName);
+        return nextFiles;
+      });
+    }
+    function handleFileRenamed({ oldName, newFile }) {
+      setFiles((currentFiles) => currentFiles.map((file) => file.name === oldName ? newFile : file));
+      setSelectedFileName((currentName) => currentName === oldName ? newFile.name : currentName);
+    }
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
-});`,
-  },
-  {
-    name: "app.js",
-    language: "javascript",
-    content: `function hello() {
-  console.log("Hello World");
-}
+    socket.on("connect", joinRoom);
+    socket.on("disconnect", () => setConnected(false));
+    socket.on("connect_error", () => setError("Could not reach the collaboration server."));
+    socket.on("code-update", handleCodeUpdate);
+    socket.on("file-created", handleFileCreated);
+    socket.on("file-deleted", handleFileDeleted);
+    socket.on("file-renamed", handleFileRenamed);
+    socket.on("participants-updated", ({ count }) => setParticipantCount(count));
+    socket.connect();
 
-hello();`,
-  },
-  {
-    name: "package.json",
-    language: "json",
-    content: `{
-  "name": "collaborative-editor",
-  "version": "1.0.0"
-}`,
-  },
-];
+    return () => {
+      socket.off("connect", joinRoom);
+      socket.off("disconnect");
+      socket.off("connect_error");
+      socket.off("code-update", handleCodeUpdate);
+      socket.off("file-created", handleFileCreated);
+      socket.off("file-deleted", handleFileDeleted);
+      socket.off("file-renamed", handleFileRenamed);
+      socket.off("participants-updated");
+      socket.disconnect();
+    };
+  }, [roomId]);
 
-export default function EditorLayout() {
-  const [files, setFiles] = useState(initialFiles);
-  const [selectedFileName, setSelectedFileName] = useState("index.js");
-
- useEffect(() => {
-  function joinRoom() {
-    socket.emit("join-room", {
-      roomId,
-      files: initialFiles,
-    });
-  }
-
-  function handleCodeUpdate({ fileName, code }) {
-    setFiles((currentFiles) =>
-      currentFiles.map((file) =>
-        file.name === fileName
-          ? { ...file, content: code }
-          : file
-      )
-    );
-  }
-
-  function handleFileCreated(file) {
-    setFiles((currentFiles) => {
-      if (
-        currentFiles.some(
-          (existing) => existing.name === file.name
-        )
-      ) {
-        return currentFiles;
-      }
-
-      return [...currentFiles, file];
-    });
-  }
-
-  function handleFileDeleted({ fileName }) {
-    setFiles((currentFiles) =>
-      currentFiles.filter(
-        (file) => file.name !== fileName
-      )
-    );
-  }
-
-  function handleFileRenamed({ oldName, newFile }) {
-    setFiles((currentFiles) =>
-      currentFiles.map((file) =>
-        file.name === oldName
-          ? newFile
-          : file
-      )
-    );
-
-    setSelectedFileName((currentName) =>
-      currentName === oldName
-        ? newFile.name
-        : currentName
-    );
-  }
-
-  socket.on("connect", joinRoom);
-
-  socket.on("code-update", handleCodeUpdate);
-
-  socket.on("file-created", handleFileCreated);
-  socket.on("file-deleted", handleFileDeleted);
-  socket.on("file-renamed", handleFileRenamed);
-
-  if (socket.connected) {
-    joinRoom();
-  }
-
-  return () => {
-    socket.off("connect", joinRoom);
-
-    socket.off("code-update", handleCodeUpdate);
-
-    socket.off("file-created", handleFileCreated);
-    socket.off("file-deleted", handleFileDeleted);
-    socket.off("file-renamed", handleFileRenamed);
-  };
-}, []);
-
-  const selectedFile = files.find(
-    (file) => file.name === selectedFileName
-  );
-
-  function handleFileSelect(file) {
-    setSelectedFileName(file.name);
-  }
+  const selectedFile = files.find((file) => file.name === selectedFileName);
+  const getLanguage = (filename) => ({ js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript", json: "json", css: "css", html: "html", py: "python", java: "java", cpp: "cpp", c: "c", md: "markdown" })[filename.split(".").pop()] || "plaintext";
 
   function handleEditorChange(value) {
-    setFiles((currentFiles) =>
-      currentFiles.map((file) =>
-        file.name === selectedFileName
-          ? {
-              ...file,
-              content: value,
-            }
-          : file
-      )
-    );
-
-    socket.emit("code-change", {
-      roomId,
-      fileName: selectedFileName,
-      code: value,
-    });
-  }
-
-  function getLanguage(filename) {
-    const extension = filename.split(".").pop();
-
-    const languages = {
-      js: "javascript",
-      jsx: "javascript",
-      ts: "typescript",
-      tsx: "typescript",
-      json: "json",
-      css: "css",
-      html: "html",
-      py: "python",
-      java: "java",
-      cpp: "cpp",
-      c: "c",
-      md: "markdown",
-    };
-
-    return languages[extension] || "plaintext";
+    if (!selectedFileName) return;
+    setFiles((currentFiles) => currentFiles.map((file) => file.name === selectedFileName ? { ...file, content: value } : file));
+    socket.emit("code-change", { roomId, fileName: selectedFileName, code: value });
   }
 
   function createFile() {
-    const name = prompt("Enter file name:");
-
+    const name = prompt("Enter file name:")?.trim();
     if (!name) return;
-
-    const trimmedName = name.trim();
-
-    if (!trimmedName) return;
-
-    if (
-      files.some(
-        (file) => file.name.toLowerCase() === trimmedName.toLowerCase()
-      )
-    ) {
-      alert("A file with this name already exists.");
-      return;
-    }
-
-    const newFile = {
-      name: trimmedName,
-      language: getLanguage(trimmedName),
-      content: "",
-    };
-
-     setFiles((currentFiles) => [
-    ...currentFiles,
-    newFile,
-  ]);
-
-  setSelectedFileName(trimmedName);
-
-  socket.emit("create-file", {
-    roomId,
-    file: newFile,
-  });
+    if (files.some((file) => file.name.toLowerCase() === name.toLowerCase())) return alert("A file with this name already exists.");
+    const file = { name, language: getLanguage(name), content: "" };
+    setFiles((currentFiles) => [...currentFiles, file]);
+    setSelectedFileName(name);
+    socket.emit("create-file", { roomId, file });
   }
 
   function deleteFile(fileName) {
-    if (files.length === 1) {
-      alert("You must have at least one file.");
-      return;
-    }
-
-    const confirmed = confirm(`Delete ${fileName}?`);
-
-    if (!confirmed) return;
-
-    const fileIndex = files.findIndex(
-      (file) => file.name === fileName
-    );
-
-    const newFiles = files.filter(
-      (file) => file.name !== fileName
-    );
-
-    setFiles(newFiles);
-
-    socket.emit("delete-file", {
-      roomId,
-      fileName,
-    });
-
-    if (selectedFileName === fileName) {
-      const nextFile =
-        newFiles[fileIndex] || newFiles[fileIndex - 1];
-
-      setSelectedFileName(nextFile.name);
-    }
+    if (files.length <= 1) return alert("You must have at least one file.");
+    if (!confirm(`Delete ${fileName}?`)) return;
+    const nextFiles = files.filter((file) => file.name !== fileName);
+    setFiles(nextFiles);
+    if (selectedFileName === fileName) setSelectedFileName(nextFiles[0]?.name || "");
+    socket.emit("delete-file", { roomId, fileName });
   }
 
   function renameFile(oldName) {
-    const newName = prompt(
-      "Enter new file name:",
-      oldName
-    );
-
-    if (!newName) return;
-
-    const trimmedName = newName.trim();
-
-    if (!trimmedName || trimmedName === oldName) {
-      return;
-    }
-
-    if (
-      files.some(
-        (file) =>
-          file.name.toLowerCase() ===
-            trimmedName.toLowerCase() &&
-          file.name !== oldName
-      )
-    ) {
-      alert("A file with this name already exists.");
-      return;
-    }
-
-   const renamedFile = {
-  ...files.find((file) => file.name === oldName),
-  name: trimmedName,
-  language: getLanguage(trimmedName),
-};
-
-setFiles((currentFiles) =>
-  currentFiles.map((file) =>
-    file.name === oldName
-      ? renamedFile
-      : file
-  )
-);
-
-if (selectedFileName === oldName) {
-  setSelectedFileName(trimmedName);
-}
-
-socket.emit("rename-file", {
-  roomId,
-  oldName,
-  newFile: renamedFile,
-});
+    const name = prompt("Enter new file name:", oldName)?.trim();
+    if (!name || name === oldName) return;
+    if (files.some((file) => file.name.toLowerCase() === name.toLowerCase() && file.name !== oldName)) return alert("A file with this name already exists.");
+    const oldFile = files.find((file) => file.name === oldName);
+    const newFile = { ...oldFile, name, language: getLanguage(name) };
+    setFiles((currentFiles) => currentFiles.map((file) => file.name === oldName ? newFile : file));
+    if (selectedFileName === oldName) setSelectedFileName(name);
+    socket.emit("rename-file", { roomId, oldName, newFile });
   }
 
-  function closeTab(fileName) {
-    if (files.length === 1) {
-      return;
+  async function shareRoom() {
+    const inviteUrl = window.location.href;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      alert("Invite link copied to your clipboard.");
+    } catch {
+      prompt("Copy this invite link:", inviteUrl);
     }
+  }
 
-    const fileIndex = files.findIndex(
-      (file) => file.name === fileName
-    );
-
-    const newFiles = files.filter(
-      (file) => file.name !== fileName
-    );
-
-    setFiles(newFiles);
-
-    if (selectedFileName === fileName) {
-      const nextFile =
-        newFiles[fileIndex] ||
-        newFiles[fileIndex - 1] ||
-        newFiles[0];
-
-      setSelectedFileName(nextFile.name);
-    }
+  if (error) {
+    return <main className="min-h-screen bg-[#0d1117] text-white grid place-items-center p-6"><div className="max-w-md text-center"><h1 className="text-xl font-semibold mb-2">Unable to join room</h1><p className="text-gray-400 mb-4">{error}</p><Link href="/" className="text-blue-400 hover:text-blue-300">Return home</Link></div></main>;
   }
 
   return (
     <div className="h-screen bg-[#0d1117] text-white flex flex-col">
-      <Navbar />
-
+      <Navbar roomId={roomId} participantCount={participantCount} connected={connected} onShare={shareRoom} />
       <div className="flex flex-1 min-h-0">
-        <FileExplorer
-          files={files}
-          selectedFile={selectedFile}
-          onSelect={handleFileSelect}
-          onCreateFile={createFile}
-          onDeleteFile={deleteFile}
-          onRenameFile={renameFile}
-        />
-
+        <FileExplorer files={files} selectedFile={selectedFile} onSelect={(file) => setSelectedFileName(file.name)} onCreateFile={createFile} onDeleteFile={deleteFile} onRenameFile={renameFile} />
         <main className="flex-1 min-w-0 flex flex-col">
-          {/* Tabs */}
           <div className="h-9 bg-[#161b22] border-b border-[#30363d] flex items-center overflow-x-auto">
-            {files.map((file) => {
-              const active =
-                selectedFileName === file.name;
-
-              return (
-                <div
-                  key={file.name}
-                  className={`h-full flex items-center border-r border-[#30363d] ${
-                    active
-                      ? "bg-[#0d1117]"
-                      : "bg-[#161b22]"
-                  }`}
-                >
-                  <button
-                    onClick={() =>
-                      handleFileSelect(file)
-                    }
-                    className={`h-full px-3 text-sm ${
-                      active
-                        ? "text-white"
-                        : "text-gray-400 hover:text-gray-200"
-                    }`}
-                  >
-                    {file.name}
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      closeTab(file.name)
-                    }
-                    className={`mr-1 px-1 text-xs rounded ${
-                      active
-                        ? "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                        : "text-gray-600 hover:text-white"
-                    }`}
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })}
+            {files.map((file) => <button key={file.name} onClick={() => setSelectedFileName(file.name)} className={`h-full px-3 text-sm border-r border-[#30363d] ${selectedFileName === file.name ? "bg-[#0d1117] text-white" : "text-gray-400 hover:text-gray-200"}`}>{file.name}</button>)}
           </div>
-
-          {/* Editor */}
-          <div className="flex-1 min-h-0">
-            {selectedFile && (
-              <CodeEditor
-                file={selectedFile}
-                onChange={handleEditorChange}
-              />
-            )}
-          </div>
+          <div className="flex-1 min-h-0">{selectedFile && <CodeEditor file={selectedFile} onChange={handleEditorChange} />}</div>
         </main>
       </div>
-
-      {/* Status bar */}
-      <div className="h-7 bg-[#161b22] border-t border-[#30363d] flex items-center justify-between px-3 text-xs text-gray-400">
-        <span>
-          <span className="text-green-500">●</span>{" "}
-          Connected
-        </span>
-
-        <span>
-          {selectedFile?.language} &nbsp; UTF-8
-        </span>
-      </div>
+      <div className="h-7 bg-[#161b22] border-t border-[#30363d] flex items-center justify-between px-3 text-xs text-gray-400"><span><span className={connected ? "text-green-500" : "text-yellow-500"}>●</span> {connected ? "Connected" : "Connecting"}</span><span>{selectedFile?.language || ""} &nbsp; UTF-8</span></div>
     </div>
   );
 }

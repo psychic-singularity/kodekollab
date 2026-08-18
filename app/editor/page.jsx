@@ -1,7 +1,5 @@
-import EditorLayout from "../components/EditorLayout";
+import { redirect } from "next/navigation";
 
 export default function EditorPage() {
-  return (
-    <EditorLayout />    
-    )
+  redirect("/");
 }
