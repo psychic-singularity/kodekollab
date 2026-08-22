@@ -1,20 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { socketUrl } from "./lib/socket";
+import { authClient } from "./lib/auth-client";
+import AuthForm from "./components/AuthForm";
 
 export default function HomePage() {
   const router = useRouter();
   const [roomId, setRoomId] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [user, setUser] = useState(undefined);
+
+  useEffect(() => { authClient.getSession().then(({ data }) => setUser(data?.user || null)); }, []);
 
   async function createRoom() {
     setCreating(true);
     setError("");
     try {
-      const response = await fetch(`${socketUrl}/api/rooms`, { method: "POST" });
+      const response = await fetch(`${socketUrl}/api/rooms`, { method: "POST", credentials: "include" });
       if (!response.ok) throw new Error("Could not create a room.");
       const { roomId: newRoomId } = await response.json();
       router.push(`/editor/${newRoomId}`);
@@ -45,6 +50,9 @@ export default function HomePage() {
 
     router.push(`/editor/${encodeURIComponent(normalizedRoomId)}`);
   }
+
+  if (user === undefined) return null;
+  if (!user) return <AuthForm onAuthenticated={setUser} />;
 
   return (
     <main className="min-h-screen bg-[#0d1117] text-white flex items-center justify-center p-6">
